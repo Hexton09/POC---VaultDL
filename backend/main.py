@@ -9,15 +9,11 @@ import yt_dlp
 import os
 import shutil
 import tempfile
+import shutil
 
-# Locate FFmpeg: use PATH if available, otherwise fall back to the known winget install path
-_FFMPEG_FALLBACK = os.path.join(
-    os.environ.get("LOCALAPPDATA", ""),
-    "Microsoft", "WinGet", "Packages",
-    "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
-    "ffmpeg-8.0.1-full_build", "bin"
-)
-FFMPEG_LOCATION = FFMPEG_LOCATION = os.path.join(os.getcwd(), "ffmpeg")
+# Simplified for Linux/Container environments
+FFMPEG_BINARY = shutil.which("ffmpeg")
+FFMPEG_LOCATION = os.path.dirname(FFMPEG_BINARY) if FFMPEG_BINARY else None
 app = FastAPI(title="Secure YT-DLP API")
 
 # Security: Configure CORS to ONLY allow your React frontend's domain/IP
