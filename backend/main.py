@@ -22,7 +22,7 @@ app.add_middleware(
     # Update origins for local testing and deployed frontend URLs
     allow_origins=[
         "http://localhost:5173",                     # local dev
-        # add your production frontend URL below (e.g. https://poc-vault-frontend.vercel.app)
+        "https://poc-vault-frontend.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["POST"],
