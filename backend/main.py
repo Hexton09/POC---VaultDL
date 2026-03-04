@@ -10,6 +10,10 @@ import yt_dlp
 
 app = FastAPI(title="VaultDL API")
 
+# standard browser UA to avoid bot blocks
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+
+
 # --- CORS CONFIGURATION ---
 origins = [
     "http://localhost:5173",
@@ -59,7 +63,11 @@ def stream_and_cleanup(file_path: str, temp_dir: str):
 @app.head("/")
 async def health_check():
     """Health check endpoint for Render monitoring."""
-    return {"status": "online", "message": "VaultDL API is running"}
+    return {
+        "status": "online", 
+        "message": "VaultDL API is running",
+        "cookies_detected": HAS_COOKIES
+    }
 
 @app.post("/api/info")
 async def get_info(request: InfoRequest):
@@ -70,6 +78,7 @@ async def get_info(request: InfoRequest):
         'no_warnings': True,
         'noplaylist': True,
         'extract_flat': False,
+        'user_agent': DEFAULT_USER_AGENT,
     }
     
     if HAS_COOKIES:
@@ -138,6 +147,7 @@ async def download_media(request: DownloadRequest):
         'ffmpeg_location': FFMPEG_LOCATION,
         'quiet': True,
         'noplaylist': True,
+        'user_agent': DEFAULT_USER_AGENT,
     }
 
     if HAS_COOKIES:
