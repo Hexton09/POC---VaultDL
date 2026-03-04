@@ -17,8 +17,7 @@ _FFMPEG_FALLBACK = os.path.join(
     "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
     "ffmpeg-8.0.1-full_build", "bin"
 )
-FFMPEG_LOCATION = shutil.which("ffmpeg") and os.path.dirname(shutil.which("ffmpeg")) or _FFMPEG_FALLBACK
-
+FFMPEG_LOCATION = FFMPEG_LOCATION = os.path.join(os.getcwd(), "ffmpeg")
 app = FastAPI(title="Secure YT-DLP API")
 
 # Security: Configure CORS to ONLY allow your React frontend's domain/IP
