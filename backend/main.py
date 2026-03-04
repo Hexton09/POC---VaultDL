@@ -14,6 +14,17 @@ import shutil
 # Simplified for Linux/Container environments
 FFMPEG_BINARY = shutil.which("ffmpeg")
 FFMPEG_LOCATION = os.path.dirname(FFMPEG_BINARY) if FFMPEG_BINARY else None
+
+# Cookie support: when running on Render we store a cookies.txt
+# secret file under /etc/secrets/cookies.txt; locally we might drop
+# a cookies.txt in the repo root for testing.  yt-dlp will read this
+# file if it exists to honour logged‑in sessions.
+COOKIE_PATH = None
+if os.path.exists("cookies.txt"):
+    COOKIE_PATH = "cookies.txt"
+elif os.path.exists("/etc/secrets/cookies.txt"):
+    COOKIE_PATH = "/etc/secrets/cookies.txt"
+
 app = FastAPI(title="Secure YT-DLP API")
 
 # Security: Configure CORS to ONLY allow your React frontend's domain/IP
@@ -46,6 +57,8 @@ async def get_video_info(request: InfoRequest):
     Fetches video metadata and a list of available formats WITHOUT downloading the video.
     """
     ydl_opts = {'noplaylist': True}
+    if COOKIE_PATH:
+        ydl_opts['cookiefile'] = COOKIE_PATH
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -125,6 +138,8 @@ async def trigger_download(request: DownloadRequest):
         'noplaylist': True,
         'ffmpeg_location': FFMPEG_LOCATION,
     }
+    if COOKIE_PATH:
+        ydl_opts['cookiefile'] = COOKIE_PATH
 
     if format_id == "bestaudio_mp3":
         ydl_opts['format'] = 'bestaudio/best'
