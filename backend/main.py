@@ -19,6 +19,9 @@ _FFMPEG_FALLBACK = os.path.join(
 )
 FFMPEG_LOCATION = shutil.which("ffmpeg") and os.path.dirname(shutil.which("ffmpeg")) or _FFMPEG_FALLBACK
 
+# Proxy configuration (set PROXY_URL environment variable for hosted deployments)
+PROXY_URL = os.environ.get("PROXY_URL")
+
 app = FastAPI(title="Secure YT-DLP API")
 
 # Security: Configure CORS to ONLY allow your React frontend's domain/IP
@@ -54,6 +57,9 @@ async def get_video_info(request: InfoRequest):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }
+    
+    if PROXY_URL:
+        ydl_opts['proxy'] = PROXY_URL
     
     if request.cookies:
         # Write cookies to a temp file
@@ -149,6 +155,9 @@ async def trigger_download(request: DownloadRequest):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }
+
+    if PROXY_URL:
+        ydl_opts['proxy'] = PROXY_URL
 
     cookie_file_path = None
     if request.cookies:
