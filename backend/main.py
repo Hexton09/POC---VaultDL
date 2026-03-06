@@ -34,10 +34,12 @@ app.add_middleware(
 # --- REQUEST MODELS ---
 class InfoRequest(BaseModel):
     url: HttpUrl
+    cookies: str = ""  # Optional: Netscape/Mozilla cookie format
 
 class DownloadRequest(BaseModel):
     url: HttpUrl
     format_id: str  # The specific ID the user chose from the frontend (e.g., "18" or "137+bestaudio")
+    cookies: str = ""  # Optional: Netscape/Mozilla cookie format
 
 
 # --- ENDPOINT 1: Fetch Available Formats ---
@@ -52,6 +54,14 @@ async def get_video_info(request: InfoRequest):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }
+    
+    if request.cookies:
+        # Write cookies to a temp file
+        import tempfile
+        cookie_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        cookie_file.write(request.cookies)
+        cookie_file.close()
+        ydl_opts['cookiefile'] = cookie_file.name
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -110,6 +120,10 @@ async def get_video_info(request: InfoRequest):
             
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch info: {str(e)}. If this is a hosted deployment, YouTube may be blocking the server's IP range. Consider using a VPS or dedicated hosting instead of cloud platforms like Render.")
+    finally:
+        # Clean up cookie file if it was created
+        if 'cookiefile' in ydl_opts:
+            os.unlink(ydl_opts['cookiefile'])
 
 
 # --- ENDPOINT 2: Download & Stream File to Browser ---
@@ -136,6 +150,15 @@ async def trigger_download(request: DownloadRequest):
         }
     }
 
+    cookie_file_path = None
+    if request.cookies:
+        # Write cookies to a temp file
+        cookie_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        cookie_file.write(request.cookies)
+        cookie_file.close()
+        cookie_file_path = cookie_file.name
+        ydl_opts['cookiefile'] = cookie_file_path
+
     if format_id == "bestaudio_mp3":
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{
@@ -155,6 +178,10 @@ async def trigger_download(request: DownloadRequest):
         # Log the error for debugging
         print(f"Download failed for {url_str}: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}. If this is a hosted deployment, YouTube may be blocking the server's IP range. Consider using a VPS or dedicated hosting instead of cloud platforms like Render.")
+    finally:
+        # Clean up cookie file if it was created
+        if cookie_file_path:
+            os.unlink(cookie_file_path)
 
     files = os.listdir(temp_dir)
     if not files:
