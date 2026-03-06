@@ -24,7 +24,7 @@ app = FastAPI(title="Secure YT-DLP API")
 # Security: Configure CORS to ONLY allow your React frontend's domain/IP
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://your-private-ip.com"],
+    allow_origins=["http://localhost:5173", "https://poc-vaultdl.onrender.com"],
     allow_credentials=True,
     allow_methods=["POST"],
     allow_headers=["*"],
