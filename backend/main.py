@@ -49,11 +49,7 @@ async def get_video_info(request: InfoRequest):
     ydl_opts = {
         'noplaylist': True,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.youtube.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }
     
@@ -113,7 +109,7 @@ async def get_video_info(request: InfoRequest):
             }
             
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch info: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch info: {str(e)}. If this is a hosted deployment, YouTube may be blocking the server's IP range. Consider using a VPS or dedicated hosting instead of cloud platforms like Render.")
 
 
 # --- ENDPOINT 2: Download & Stream File to Browser ---
@@ -134,12 +130,9 @@ async def trigger_download(request: DownloadRequest):
         'restrictfilenames': True,
         'noplaylist': True,
         'ffmpeg_location': FFMPEG_LOCATION,
+        # Add user agent to mimic browser
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.youtube.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }
 
@@ -159,7 +152,9 @@ async def trigger_download(request: DownloadRequest):
             ydl.download([url_str])
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
+        # Log the error for debugging
+        print(f"Download failed for {url_str}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}. If this is a hosted deployment, YouTube may be blocking the server's IP range. Consider using a VPS or dedicated hosting instead of cloud platforms like Render.")
 
     files = os.listdir(temp_dir)
     if not files:
