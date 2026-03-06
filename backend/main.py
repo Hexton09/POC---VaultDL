@@ -21,7 +21,7 @@ FFMPEG_LOCATION = shutil.which("ffmpeg") and os.path.dirname(shutil.which("ffmpe
 
 # Proxy configuration (set PROXY_URL environment variable for hosted deployments)
 # If not set, will use a default free proxy (may not work)
-PROXY_URL = os.environ.get("PROXY_URL", "http://1.52.198.221:16000")
+PROXY_URL = os.environ.get("PROXY_URL", "http://113.193.192.2:8080")
 
 app = FastAPI(title="Secure YT-DLP API")
 
