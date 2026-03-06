@@ -1,198 +1,177 @@
-import os
-import shutil
-import tempfile
-import uuid
+# 1. Install dependencies: pip install fastapi uvicorn yt-dlp pydantic flask-cors
+# 2. Run the server: uvicorn main:app --reload --port 8000
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 import yt_dlp
+import os
+import shutil
+import tempfile
 
-app = FastAPI(title="VaultDL API")
+# Locate FFmpeg: use PATH if available, otherwise fall back to the known winget install path
+_FFMPEG_FALLBACK = os.path.join(
+    os.environ.get("LOCALAPPDATA", ""),
+    "Microsoft", "WinGet", "Packages",
+    "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
+    "ffmpeg-8.0.1-full_build", "bin"
+)
+FFMPEG_LOCATION = shutil.which("ffmpeg") and os.path.dirname(shutil.which("ffmpeg")) or _FFMPEG_FALLBACK
 
-# standard browser UA to avoid bot blocks
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+app = FastAPI(title="Secure YT-DLP API")
 
-
-# --- CORS CONFIGURATION ---
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://poc-vaultdl.onrender.com",
-    "*"
-]
-
+# Security: Configure CORS to ONLY allow your React frontend's domain/IP
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:5173", "http://your-private-ip.com"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["POST"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition"],  # So browser JS can read the filename
 )
 
-# --- FFMPEG & COOKIE SETUP ---
-FFMPEG_PATH = shutil.which("ffmpeg")
-FFMPEG_LOCATION = os.path.dirname(FFMPEG_PATH) if FFMPEG_PATH else None
-
-# Path for cookies (Render Secret Files are placed in /etc/secrets/)
-COOKIE_PATH = "cookies.txt" if os.path.exists("cookies.txt") else "/etc/secrets/cookies.txt"
-HAS_COOKIES = os.path.exists(COOKIE_PATH)
-
+# --- REQUEST MODELS ---
 class InfoRequest(BaseModel):
-    url: str
+    url: HttpUrl
 
 class DownloadRequest(BaseModel):
-    url: str
-    format_id: str
+    url: HttpUrl
+    format_id: str  # The specific ID the user chose from the frontend (e.g., "18" or "137+bestaudio")
 
-def stream_and_cleanup(file_path: str, temp_dir: str):
-    """Generator to stream file chunks and delete the temp folder after completion."""
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                while chunk := f.read(1024 * 1024): # 1MB chunks
-                    yield chunk
-    finally:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
 
-# --- ROUTES ---
-
-@app.get("/")
-@app.head("/")
-async def health_check():
-    """Health check endpoint for Render monitoring."""
-    return {
-        "status": "online", 
-        "message": "VaultDL API is running",
-        "cookies_detected": HAS_COOKIES
-    }
-
+# --- ENDPOINT 1: Fetch Available Formats ---
 @app.post("/api/info")
-async def get_info(request: InfoRequest):
-    # We remove 'format': 'best' here to avoid "Requested format is not available" errors.
-    # We want the full list of metadata so we can filter it ourselves.
+async def get_video_info(request: InfoRequest):
+    """
+    Fetches video metadata and a list of available formats WITHOUT downloading the video.
+    """
     ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
         'noplaylist': True,
-        'extract_flat': False,
-        'user_agent': DEFAULT_USER_AGENT,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+        }
     }
-    
-    if HAS_COOKIES:
-        ydl_opts['cookiefile'] = COOKIE_PATH
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(request.url, download=False)
+            # download=False means we just extract the info/metadata
+            info = ydl.extract_info(str(request.url), download=False)
             
-            raw_formats = info.get('formats', [])
-            processed_formats = []
-            
-            # Use a set to avoid duplicate resolutions
-            seen_resolutions = set()
-            
-            # Sort formats by resolution (highest first)
-            sorted_formats = sorted(
-                [f for f in raw_formats if f.get('height')], 
-                key=lambda x: x.get('height', 0), 
-                reverse=True
-            )
+            # Clean up the format list to send to the frontend
+            available_formats = []
+            for f in info.get('formats', []):
+                # Only include formats that actually have video or audio
+                if f.get('vcodec') != 'none' or f.get('acodec') != 'none':
+                    
+                    has_video = f.get('vcodec') != 'none'
+                    has_audio = f.get('acodec') != 'none'
+                    
+                    # Default format ID provided by YouTube
+                    target_format_id = f.get("format_id")
+                    
+                    if has_video and has_audio:
+                        type_label = "Video + Audio (Pre-merged)"
+                    elif has_video:
+                        type_label = "Video + Audio (High Quality Merge)"
+                        # MAGIC HAPPENS HERE: We tell yt-dlp to grab this video AND the best audio
+                        target_format_id = f"{target_format_id}+bestaudio"
+                    else:
+                        type_label = "Audio Only"
 
-            for f in sorted_formats:
-                height = f.get('height')
-                # We want video formats with a height >= 720
-                if height and height >= 720 and f.get('vcodec') != 'none':
-                    res_label = f"{height}p"
-                    if res_label not in seen_resolutions:
-                        processed_formats.append({
-                            "format_id": f.get('format_id'),
-                            "resolution": res_label,
-                            "ext": f.get('ext', 'mp4'),
-                            "note": f.get('format_note', 'HD'),
-                            "type": "video"
-                        })
-                        seen_resolutions.add(res_label)
+                    available_formats.append({
+                        "format_id": target_format_id,
+                        "ext": f.get("ext"),
+                        "resolution": f.get("resolution") or "Audio",
+                        "note": f.get("format_note") or "",
+                        "type": type_label,
+                        "filesize_mb": round(f.get("filesize", 0) / (1024 * 1024), 2) if f.get("filesize") else "Unknown"
+                    })
+                    
+            # Sort formats by resolution (best to worst) just to make it look nice on the frontend
+            available_formats.reverse()
 
-            # Add an MP3 option (Best Audio) as a fallback/default
-            processed_formats.append({
-                "format_id": "bestaudio/best",
-                "resolution": "Best Audio",
+            # ADD A DEDICATED BEST AUDIO (MP3) OPTION AT THE TOP
+            available_formats.insert(0, {
+                "format_id": "bestaudio_mp3",
                 "ext": "mp3",
-                "note": "192kbps",
-                "type": "audio"
+                "resolution": "Audio",
+                "note": "Highest Quality",
+                "type": "Audio Only (MP3 Extraction)",
+                "filesize_mb": "Auto"
             })
 
             return {
-                "title": info.get('title', 'Video'),
-                "thumbnail": info.get('thumbnail'),
-                "duration": info.get('duration'),
-                "formats": processed_formats[:6] # Keep the UI clean
+                "title": info.get("title"),
+                "thumbnail": info.get("thumbnail"),
+                "duration": info.get("duration_string"),
+                "formats": available_formats
             }
+            
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch info: {str(e)}")
 
+
+# --- ENDPOINT 2: Download & Stream File to Browser ---
 @app.post("/api/download")
-async def download_media(request: DownloadRequest):
+async def trigger_download(request: DownloadRequest):
+    """
+    Downloads the video/audio to a temp folder, streams it directly to the
+    user's browser, then deletes the temp file. Nothing is kept on the server.
+    """
+    url_str = str(request.url)
+    format_id = request.format_id
+
+    # Create a throwaway temp directory for this single download
     temp_dir = tempfile.mkdtemp()
-    output_template = os.path.join(temp_dir, f"{uuid.uuid4()}.%(ext)s")
-    
-    is_audio = "audio" in request.format_id or "bestaudio" in request.format_id
-    
+
     ydl_opts = {
-        'format': request.format_id,
-        'outtmpl': output_template,
-        'ffmpeg_location': FFMPEG_LOCATION,
-        'quiet': True,
+        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+        'restrictfilenames': True,
         'noplaylist': True,
-        'user_agent': DEFAULT_USER_AGENT,
+        'ffmpeg_location': FFMPEG_LOCATION,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+        }
     }
 
-    if HAS_COOKIES:
-        ydl_opts['cookiefile'] = COOKIE_PATH
+    if format_id == "bestaudio_mp3":
+        ydl_opts['format'] = 'bestaudio/best'
+        ydl_opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
+    else:
+        ydl_opts['format'] = format_id
 
-    if is_audio:
-        ydl_opts.update({
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        })
-
+    # Run the download synchronously so we can stream the result back
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(request.url, download=True)
-            filename = ydl.prepare_filename(info)
-            
-            if is_audio:
-                filename = filename.rsplit('.', 1)[0] + ".mp3"
-            
-            # Ensure we find the file even if extension changed during processing
-            if not os.path.exists(filename):
-                files = os.listdir(temp_dir)
-                if files:
-                    filename = os.path.join(temp_dir, files[0])
-                else:
-                    raise FileNotFoundError("FFmpeg processing failed to generate output.")
-
-            display_name = f"{info.get('title', 'download')}.{'mp3' if is_audio else 'mp4'}"
-
-            return StreamingResponse(
-                stream_and_cleanup(filename, temp_dir),
-                media_type="application/octet-stream",
-                headers={"Content-Disposition": f"attachment; filename=\"{display_name}\""}
-            )
-
+            ydl.download([url_str])
     except Exception as e:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
 
-if __name__ == "__main__":
-    import uvicorn
-    # Render provides the PORT env var, defaults to 10000 for Docker
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    files = os.listdir(temp_dir)
+    if not files:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail="Download produced no output file.")
+
+    file_path = os.path.join(temp_dir, files[0])
+    filename = files[0]
+
+    # Generator that streams the file in chunks, then cleans up the temp dir
+    def stream_and_cleanup():
+        try:
+            with open(file_path, 'rb') as f:
+                while chunk := f.read(1024 * 1024):  # 1 MB chunks
+                    yield chunk
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return StreamingResponse(
+        stream_and_cleanup(),
+        media_type='application/octet-stream',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
