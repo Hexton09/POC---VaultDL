@@ -20,7 +20,8 @@ _FFMPEG_FALLBACK = os.path.join(
 FFMPEG_LOCATION = shutil.which("ffmpeg") and os.path.dirname(shutil.which("ffmpeg")) or _FFMPEG_FALLBACK
 
 # Proxy configuration (set PROXY_URL environment variable for hosted deployments)
-PROXY_URL = os.environ.get("PROXY_URL")
+# If not set, will use a default free proxy (may not work)
+PROXY_URL = os.environ.get("PROXY_URL", "http://1.52.198.221:16000")
 
 app = FastAPI(title="Secure YT-DLP API")
 
