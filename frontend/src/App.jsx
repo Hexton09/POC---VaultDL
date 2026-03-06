@@ -143,6 +143,7 @@ export default function App() {
     const [videoInfo, setVideoInfo] = useState(null);
     const [selectedFormat, setSelectedFormat] = useState('');
     const [message, setMessage] = useState('');
+    const [cookies, setCookies] = useState('');
 
     // ── Step 1: fetch video info & formats ───────────────────
     const handleFetchInfo = async (e) => {
@@ -151,7 +152,7 @@ export default function App() {
         setStatus('fetching');
         setMessage('Analyzing video links securely...');
         try {
-            const data = await fetchVideoInfo(url);
+            const data = await fetchVideoInfo(url, cookies);
             setVideoInfo(data);
             if (data.formats?.length > 0) setSelectedFormat(data.formats[0].format_id);
             setStatus('selecting');
@@ -166,7 +167,7 @@ export default function App() {
         setStatus('downloading');
         setMessage('Downloading... please wait, large files may take a moment.');
         try {
-            const response = await downloadVideo(url, selectedFormat);
+            const response = await downloadVideo(url, selectedFormat, cookies);
             const disposition = response.headers.get('Content-Disposition');
             let filename = 'download';
             if (disposition) {
@@ -254,6 +255,32 @@ export default function App() {
                                 status={status}
                                 onSubmit={handleFetchInfo}
                             />
+                            
+                            {/* Cookies Input */}
+                            <div className="w-full max-w-xl mx-auto">
+                                <details className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 shadow-lg">
+                                    <summary className="cursor-pointer text-sm font-semibold text-text-main dark:text-white mb-2">
+                                        Advanced: YouTube Cookies (Optional)
+                                    </summary>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                        If downloads fail due to bot detection, paste your YouTube cookies here. 
+                                        <a href="https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies" 
+                                           target="_blank" rel="noopener noreferrer" 
+                                           className="text-primary underline">
+                                            How to export cookies
+                                        </a>
+                                    </p>
+                                    <textarea
+                                        placeholder="Paste Netscape/Mozilla cookie format here..."
+                                        className="w-full bg-bg-light dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-text-main dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none"
+                                        rows="4"
+                                        value={cookies}
+                                        onChange={(e) => setCookies(e.target.value)}
+                                        disabled={status === 'fetching'}
+                                    />
+                                </details>
+                            </div>
+                            
                             {status === 'error' && (
                                 <div className="w-full max-w-xl mx-auto">
                                     <StatusMessage status={status} message={message} />
